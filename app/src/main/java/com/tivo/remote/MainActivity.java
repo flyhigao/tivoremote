@@ -80,12 +80,12 @@ public class MainActivity extends Activity {
             }
         });
 
-        // D-Pad
+        // D-Pad: OK is DPAD_CENTER (23) for standard TV interaction and soft keyboard clicking
         setKeyButton(R.id.btn_up, 19, BluetoothHidController.KEY_UP, false);
         setKeyButton(R.id.btn_down, 20, BluetoothHidController.KEY_DOWN, false);
         setKeyButton(R.id.btn_left, 21, BluetoothHidController.KEY_LEFT, false);
         setKeyButton(R.id.btn_right, 22, BluetoothHidController.KEY_RIGHT, false);
-        setKeyButton(R.id.btn_ok, 66, BluetoothHidController.KEY_ENTER, false);
+        setKeyButton(R.id.btn_ok, 23, BluetoothHidController.KEY_ENTER, false);
 
         // Function Buttons
         setKeyButton(R.id.btn_back, 4, BluetoothHidController.KEY_ESCAPE, false);
@@ -95,6 +95,15 @@ public class MainActivity extends Activity {
         // Volume Buttons
         setKeyButton(R.id.btn_vol_down, 25, BluetoothHidController.CONSUMER_VOL_DOWN, true);
         setKeyButton(R.id.btn_vol_up, 24, BluetoothHidController.CONSUMER_VOL_UP, true);
+
+        // Text Input Dialog
+        View btnInput = findViewById(R.id.btn_input_text);
+        if (btnInput != null) {
+            btnInput.setOnClickListener(v -> {
+                vibrate();
+                showTextInputDialog();
+            });
+        }
 
         // Numbers 0 - 9
         setKeyButton(R.id.btn_1, 8, BluetoothHidController.KEY_1, false);
@@ -290,6 +299,29 @@ public class MainActivity extends Activity {
             tvStatus.setText("蓝牙未连接，请点击【连接电视】");
             viewStatusDot.setBackgroundColor(getResources().getColor(R.color.status_yellow));
         }
+    }
+
+    private void showTextInputDialog() {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("手机打字输入到电视");
+
+        final EditText input = new EditText(this);
+        input.setHint("输入英文、拼音搜索词 (如 qqmusic)");
+        builder.setView(input);
+
+        builder.setPositiveButton("发送", (dialog, which) -> {
+            String text = input.getText().toString().trim();
+            if (!text.isEmpty()) {
+                if (isWifiMode && adbProtocol != null) {
+                    adbProtocol.sendText(text);
+                    Toast.makeText(this, "已发送: " + text, Toast.LENGTH_SHORT).show();
+                } else {
+                    Toast.makeText(this, "当前模式不支持打字推送", Toast.LENGTH_SHORT).show();
+                }
+            }
+        });
+        builder.setNegativeButton("取消", null);
+        builder.show();
     }
 
     private void showIpDialog() {

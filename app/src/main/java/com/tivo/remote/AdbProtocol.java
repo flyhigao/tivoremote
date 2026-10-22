@@ -194,6 +194,26 @@ public class AdbProtocol {
         });
     }
 
+    public void sendText(String text) {
+        sendExecutor.execute(() -> {
+            if (!isConnected() || outputStream == null) {
+                Log.w(TAG, "Cannot send text: not connected");
+                connect(currentHost, currentPort);
+                return;
+            }
+            try {
+                int localId = localIdCounter++;
+                String escaped = text.replace(" ", "%s");
+                String cmd = "shell:input text " + escaped + "\0";
+                Message openMsg = Message.create(A_OPEN, localId, 0, cmd.getBytes());
+                openMsg.write(outputStream);
+                Log.d(TAG, "Sent text [" + text + "] successfully");
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to send text", e);
+            }
+        });
+    }
+
     private void runConnection() {
         closeSocket();
         isConnected = false;

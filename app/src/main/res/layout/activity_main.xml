@@ -189,7 +189,7 @@
                 android:background="@drawable/bg_button" />
         </LinearLayout>
 
-        <!-- Volume Buttons -->
+        <!-- Volume Buttons & Text Input -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="48dp"
@@ -213,9 +213,21 @@
                 android:layout_width="0dp"
                 android:layout_height="match_parent"
                 android:layout_weight="1"
+                android:layout_marginEnd="8dp"
                 android:text="@string/btn_vol_up"
                 android:textColor="@color/text_primary"
                 android:textSize="14sp"
+                android:background="@drawable/bg_button" />
+
+            <Button
+                android:id="@+id/btn_input_text"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:text="⌨️ 打字"
+                android:textColor="@color/accent_blue"
+                android:textSize="14sp"
+                android:textStyle="bold"
                 android:background="@drawable/bg_button" />
         </LinearLayout>
 
