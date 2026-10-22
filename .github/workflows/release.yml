@@ -1,0 +1,86 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Build APK
+        run: |
+          mkdir -p build/compiled_res build/gen build/classes build/dex
+          BUILD_TOOLS="$ANDROID_HOME/build-tools/33.0.2"
+          PLATFORM="$ANDROID_HOME/platforms/android-33/android.jar"
+
+          # 1. Compile resources
+          $BUILD_TOOLS/aapt2 compile --dir app/src/main/res -o build/compiled_res/resources.zip
+
+          # 2. Link resources
+          $BUILD_TOOLS/aapt2 link -o build/unaligned.apk \
+            -I $PLATFORM \
+            --manifest app/src/main/AndroidManifest.xml \
+            --java build/gen \
+            build/compiled_res/resources.zip \
+            --auto-add-overlay
+
+          # 3. Compile Java
+          javac -encoding UTF-8 -d build/classes -cp $PLATFORM build/gen/com/tivo/remote/R.java app/src/main/java/com/tivo/remote/*.java
+
+          # 4. Convert to DEX
+          java -cp $BUILD_TOOLS/lib/d8.jar com.android.tools.r8.D8 \
+            --output build/dex \
+            --lib $PLATFORM \
+            build/classes/com/tivo/remote/*.class
+
+          # 5. Add DEX into APK
+          cd build/dex && jar -uf ../unaligned.apk classes.dex && cd ../..
+
+          # 6. Align APK
+          $BUILD_TOOLS/zipalign -f -p 4 build/unaligned.apk build/TiVoRemote_aligned.apk
+
+          # 7. Generate debug keystore and sign
+          keytool -genkeypair -v -keystore release.keystore -alias debug -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=Android,O=Android,C=US"
+          java -jar $BUILD_TOOLS/lib/apksigner.jar sign --ks release.keystore --ks-pass pass:android --out TiVoRemote.apk build/TiVoRemote_aligned.apk
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+        with:
+          tag_name: ${{ github.ref_name || 'v1.0.0' }}
+          name: TiVoRemote ${{ github.ref_name || 'v1.0.0' }}
+          draft: false
+          prerelease: false
+          files: TiVoRemote.apk
+          body: |
+            ### TiVoRemote ${{ github.ref_name || 'v1.0.0' }} 首发版本
+
+            专为 **TiVo Stream 4K** 及通用 Android TV / 电视机顶盒设计的轻量级手机遥控器。
+
+            #### ✨ 主要功能：
+            - **双模式切换**：支持 Wi-Fi (局域网 ADB) 与 蓝牙 (Bluetooth HID) 双通信模式
+            - **完整方向键**：上、下、左、右与大号居中 OK 确认
+            - **系统常用控制**：主页 (Home)、返回 (Back)、菜单 (Menu)、音量增加 / 减小
+            - **完整 0-9 数字小键盘**：1~9、0、删除，电视换台必备
+            - **TiVo 专属键**：一键呼出 TiVo Stream 官方主界面
+            - **触感反馈**：按键伴随微弱触感震动反馈
+            - **极致轻巧**：无任何商业广告与第三方臃肿 SDK，安装包仅约 35 KB
