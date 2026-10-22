@@ -23,14 +23,15 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Build APK
         run: |
           mkdir -p build/compiled_res build/gen build/classes build/dex
-          BUILD_TOOLS="$ANDROID_HOME/build-tools/33.0.2"
-          PLATFORM="$ANDROID_HOME/platforms/android-33/android.jar"
+          ANDROID_HOME=$ANDROID_SDK_ROOT
+          BUILD_TOOLS=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -1)
+          PLATFORM=$(ls -d $ANDROID_HOME/platforms/android-* | sort -V | tail -1)/android.jar
+
+          echo "Using Build Tools: $BUILD_TOOLS"
+          echo "Using Platform: $PLATFORM"
 
           # 1. Compile resources
           $BUILD_TOOLS/aapt2 compile --dir app/src/main/res -o build/compiled_res/resources.zip
@@ -58,13 +59,12 @@ jobs:
           # 6. Align APK
           $BUILD_TOOLS/zipalign -f -p 4 build/unaligned.apk build/TiVoRemote_aligned.apk
 
-          # 7. Generate debug keystore and sign
+          # 7. Generate keystore and sign
           keytool -genkeypair -v -keystore release.keystore -alias debug -keyalg RSA -keysize 2048 -validity 10000 -storepass android -keypass android -dname "CN=Android,O=Android,C=US"
           java -jar $BUILD_TOOLS/lib/apksigner.jar sign --ks release.keystore --ks-pass pass:android --out TiVoRemote.apk build/TiVoRemote_aligned.apk
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         with:
           tag_name: ${{ github.ref_name || 'v1.0.0' }}
           name: TiVoRemote ${{ github.ref_name || 'v1.0.0' }}
