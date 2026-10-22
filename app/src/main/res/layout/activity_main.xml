@@ -1,0 +1,392 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/bg_main"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp"
+        android:gravity="center_horizontal">
+
+        <!-- Mode Selector Tabs -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="44dp"
+            android:background="@drawable/bg_tab_container"
+            android:orientation="horizontal"
+            android:padding="4dp">
+
+            <TextView
+                android:id="@+id/tab_wifi"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:text="@string/mode_wifi"
+                android:textColor="@color/text_primary"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:background="@drawable/bg_tab_active" />
+
+            <TextView
+                android:id="@+id/tab_bluetooth"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:gravity="center"
+                android:text="@string/mode_bluetooth"
+                android:textColor="@color/text_secondary"
+                android:textSize="14sp"
+                android:background="@drawable/bg_tab_inactive" />
+        </LinearLayout>
+
+        <!-- Status Card -->
+        <LinearLayout
+            android:id="@+id/layout_status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:background="@drawable/bg_button"
+            android:orientation="horizontal"
+            android:padding="12dp"
+            android:gravity="center_vertical">
+
+            <View
+                android:id="@+id/view_status_dot"
+                android:layout_width="10dp"
+                android:layout_height="10dp"
+                android:layout_marginEnd="8dp"
+                android:background="@drawable/bg_tab_active" />
+
+            <TextView
+                android:id="@+id/tv_status"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="正在初始化..."
+                android:textColor="@color/text_primary"
+                android:textSize="13sp" />
+
+            <Button
+                android:id="@+id/btn_action"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:text="连接"
+                android:textColor="@color/text_primary"
+                android:textSize="12sp"
+                android:background="@drawable/bg_tab_active"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp" />
+        </LinearLayout>
+
+        <!-- Circular D-Pad -->
+        <FrameLayout
+            android:layout_width="220dp"
+            android:layout_height="220dp"
+            android:layout_marginTop="20dp"
+            android:background="@drawable/bg_dpad_ring">
+
+            <!-- Up -->
+            <Button
+                android:id="@+id/btn_up"
+                android:layout_width="70dp"
+                android:layout_height="65dp"
+                android:layout_gravity="top|center_horizontal"
+                android:text="▲"
+                android:textColor="@color/text_primary"
+                android:textSize="20sp"
+                android:background="@drawable/bg_dpad_btn" />
+
+            <!-- Down -->
+            <Button
+                android:id="@+id/btn_down"
+                android:layout_width="70dp"
+                android:layout_height="65dp"
+                android:layout_gravity="bottom|center_horizontal"
+                android:text="▼"
+                android:textColor="@color/text_primary"
+                android:textSize="20sp"
+                android:background="@drawable/bg_dpad_btn" />
+
+            <!-- Left -->
+            <Button
+                android:id="@+id/btn_left"
+                android:layout_width="65dp"
+                android:layout_height="70dp"
+                android:layout_gravity="start|center_vertical"
+                android:text="◀"
+                android:textColor="@color/text_primary"
+                android:textSize="20sp"
+                android:background="@drawable/bg_dpad_btn" />
+
+            <!-- Right -->
+            <Button
+                android:id="@+id/btn_right"
+                android:layout_width="65dp"
+                android:layout_height="70dp"
+                android:layout_gravity="end|center_vertical"
+                android:text="▶"
+                android:textColor="@color/text_primary"
+                android:textSize="20sp"
+                android:background="@drawable/bg_dpad_btn" />
+
+            <!-- Center OK -->
+            <Button
+                android:id="@+id/btn_ok"
+                android:layout_width="72dp"
+                android:layout_height="72dp"
+                android:layout_gravity="center"
+                android:text="@string/btn_ok"
+                android:textColor="#FFFFFF"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:background="@drawable/bg_button_ok" />
+        </FrameLayout>
+
+        <!-- Function Buttons: Back, Home, Menu -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:layout_marginTop="16dp"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+            <Button
+                android:id="@+id/btn_back"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_marginEnd="8dp"
+                android:text="@string/btn_back"
+                android:textColor="@color/text_primary"
+                android:textSize="15sp"
+                android:background="@drawable/bg_button" />
+
+            <Button
+                android:id="@+id/btn_home"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_marginEnd="8dp"
+                android:text="@string/btn_home"
+                android:textColor="@color/text_primary"
+                android:textSize="15sp"
+                android:textStyle="bold"
+                android:background="@drawable/bg_button" />
+
+            <Button
+                android:id="@+id/btn_menu"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:text="@string/btn_menu"
+                android:textColor="@color/text_primary"
+                android:textSize="15sp"
+                android:background="@drawable/bg_button" />
+        </LinearLayout>
+
+        <!-- Volume Buttons -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginTop="10dp"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+            <Button
+                android:id="@+id/btn_vol_down"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:layout_marginEnd="8dp"
+                android:text="@string/btn_vol_down"
+                android:textColor="@color/text_primary"
+                android:textSize="14sp"
+                android:background="@drawable/bg_button" />
+
+            <Button
+                android:id="@+id/btn_vol_up"
+                android:layout_width="0dp"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:text="@string/btn_vol_up"
+                android:textColor="@color/text_primary"
+                android:textSize="14sp"
+                android:background="@drawable/bg_button" />
+        </LinearLayout>
+
+        <!-- Number Keypad (3x4 Grid) -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:layout_marginBottom="16dp"
+            android:orientation="vertical">
+
+            <!-- Row 1: 1 2 3 -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:orientation="horizontal"
+                android:layout_marginBottom="8dp">
+
+                <Button
+                    android:id="@+id/btn_1"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="8dp"
+                    android:text="1"
+                    android:textColor="@color/text_primary"
+                    android:textSize="18sp"
+                    android:background="@drawable/bg_button" />
+
+                <Button
+                    android:id="@+id/btn_2"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="8dp"
+                    android:text="2"
+                    android:textColor="@color/text_primary"
+                    android:textSize="18sp"
+                    android:background="@drawable/bg_button" />
+
+                <Button
+                    android:id="@+id/btn_3"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:text="3"
+                    android:textColor="@color/text_primary"
+                    android:textSize="18sp"
+                    android:background="@drawable/bg_button" />
+            </LinearLayout>
+
+            <!-- Row 2: 4 5 6 -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:orientation="horizontal"
+                android:layout_marginBottom="8dp">
+
+                <Button
+                    android:id="@+id/btn_4"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="8dp"
+                    android:text="4"
+                    android:textColor="@color/text_primary"
+                    android:textSize="18sp"
+                    android:background="@drawable/bg_button" />
+
+                <Button
+                    android:id="@+id/btn_5"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="8dp"
+                    android:text="5"
+                    android:textColor="@color/text_primary"
+                    android:textSize="18sp"
+                    android:background="@drawable/bg_button" />
+
+                <Button
+                    android:id="@+id/btn_6"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:text="6"
+                    android:textColor="@color/text_primary"
+                    android:textSize="18sp"
+                    android:background="@drawable/bg_button" />
+            </LinearLayout>
+
+            <!-- Row 3: 7 8 9 -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:orientation="horizontal"
+                android:layout_marginBottom="8dp">
+
+                <Button
+                    android:id="@+id/btn_7"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="8dp"
+                    android:text="7"
+                    android:textColor="@color/text_primary"
+                    android:textSize="18sp"
+                    android:background="@drawable/bg_button" />
+
+                <Button
+                    android:id="@+id/btn_8"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="8dp"
+                    android:text="8"
+                    android:textColor="@color/text_primary"
+                    android:textSize="18sp"
+                    android:background="@drawable/bg_button" />
+
+                <Button
+                    android:id="@+id/btn_9"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:text="9"
+                    android:textColor="@color/text_primary"
+                    android:textSize="18sp"
+                    android:background="@drawable/bg_button" />
+            </LinearLayout>
+
+            <!-- Row 4: Del 0 TiVo -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/btn_del"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="8dp"
+                    android:text="@string/btn_del"
+                    android:textColor="@color/text_secondary"
+                    android:textSize="14sp"
+                    android:background="@drawable/bg_button" />
+
+                <Button
+                    android:id="@+id/btn_0"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:layout_marginEnd="8dp"
+                    android:text="0"
+                    android:textColor="@color/text_primary"
+                    android:textSize="18sp"
+                    android:background="@drawable/bg_button" />
+
+                <Button
+                    android:id="@+id/btn_tivo"
+                    android:layout_width="0dp"
+                    android:layout_height="match_parent"
+                    android:layout_weight="1"
+                    android:text="TiVo"
+                    android:textColor="@color/accent_blue"
+                    android:textSize="15sp"
+                    android:textStyle="bold"
+                    android:background="@drawable/bg_button" />
+            </LinearLayout>
+        </LinearLayout>
+
+    </LinearLayout>
+</ScrollView>

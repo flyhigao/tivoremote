@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TiVo 电视遥控器</string>
+    <string name="mode_wifi">Wi-Fi 局域网</string>
+    <string name="mode_bluetooth">蓝牙 HID</string>
+    <string name="status_disconnected">未连接</string>
+    <string name="status_connected">已连接</string>
+    <string name="btn_home">主页</string>
+    <string name="btn_back">返回</string>
+    <string name="btn_ok">OK</string>
+    <string name="btn_vol_up">音量+</string>
+    <string name="btn_vol_down">音量-</string>
+    <string name="btn_menu">菜单</string>
+    <string name="btn_del">删除</string>
+</resources>
