@@ -52,7 +52,7 @@ public class AdbProtocol {
             int read = 0;
             while (read < 24) {
                 int r = is.read(header, read, 24 - read);
-                if (r < 0) throw new Exception("Socket closed while reading header");
+                if (r < 0) throw new Exception("连接已关闭");
                 read += r;
             }
             ByteBuffer bb = ByteBuffer.wrap(header).order(ByteOrder.LITTLE_ENDIAN);
@@ -65,7 +65,7 @@ public class AdbProtocol {
             msg.magic = bb.getInt();
 
             if ((msg.command ^ 0xFFFFFFFF) != msg.magic) {
-                throw new Exception("Invalid message magic: " + msg.magic);
+                throw new Exception("消息校验错误: magic 不匹配");
             }
 
             if (msg.dataLength > 0) {
@@ -73,7 +73,7 @@ public class AdbProtocol {
                 int pRead = 0;
                 while (pRead < msg.dataLength) {
                     int r = is.read(msg.payload, pRead, msg.dataLength - pRead);
-                    if (r < 0) throw new Exception("Socket closed while reading payload");
+                    if (r < 0) throw new Exception("连接在读取负载时关闭");
                     pRead += r;
                 }
             } else {
@@ -125,7 +125,10 @@ public class AdbProtocol {
     private final AdbCrypto crypto;
     private final ConnectionListener listener;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
-    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    
+    // Dedicated sender thread executor for non-blocking key event dispatch
+    private final ExecutorService sendExecutor = Executors.newSingleThreadExecutor();
+    private Thread connectionThread;
 
     private Socket socket;
     private OutputStream outputStream;
@@ -140,28 +143,40 @@ public class AdbProtocol {
         this.listener = listener;
     }
 
-    public void connect(String host, int port) {
+    public synchronized void connect(String host, int port) {
         this.currentHost = host;
         this.currentPort = port;
-        executor.execute(this::doConnect);
+
+        if (connectionThread != null && connectionThread.isAlive()) {
+            closeSocket();
+            connectionThread.interrupt();
+        }
+
+        connectionThread = new Thread(this::runConnection, "AdbConnectionThread");
+        connectionThread.start();
     }
 
-    public void disconnect() {
-        executor.execute(() -> {
-            closeSocket();
-            isConnected = false;
-            notifyDisconnected("已断开");
-        });
+    public synchronized void disconnect() {
+        closeSocket();
+        isConnected = false;
+        if (connectionThread != null) {
+            connectionThread.interrupt();
+            connectionThread = null;
+        }
+        notifyDisconnected("已断开");
     }
 
     public boolean isConnected() {
-        return isConnected;
+        return isConnected && socket != null && !socket.isClosed();
     }
 
     public void sendKey(int keycode) {
-        executor.execute(() -> {
-            if (!isConnected || outputStream == null) {
-                Log.w(TAG, "Cannot send key, not connected");
+        sendExecutor.execute(() -> {
+            if (!isConnected() || outputStream == null) {
+                Log.w(TAG, "Cannot send key: not connected");
+                mainHandler.post(() -> listener.onDisconnected("未连接"));
+                // Trigger auto-reconnect
+                connect(currentHost, currentPort);
                 return;
             }
             try {
@@ -169,6 +184,7 @@ public class AdbProtocol {
                 String cmd = "shell:input keyevent " + keycode + "\0";
                 Message openMsg = Message.create(A_OPEN, localId, 0, cmd.getBytes());
                 openMsg.write(outputStream);
+                Log.d(TAG, "Sent keycode " + keycode + " successfully");
             } catch (Exception e) {
                 Log.e(TAG, "Failed to send key", e);
                 closeSocket();
@@ -178,8 +194,9 @@ public class AdbProtocol {
         });
     }
 
-    private void doConnect() {
+    private void runConnection() {
         closeSocket();
+        isConnected = false;
         notifyConnecting();
 
         try {
@@ -189,15 +206,15 @@ public class AdbProtocol {
             outputStream = socket.getOutputStream();
             inputStream = socket.getInputStream();
 
-            // Send A_CNXN
+            // 1. Send A_CNXN
             String banner = "host::TiVoRemoteApp\0";
             Message cnxn = Message.create(A_CNXN, A_VERSION, MAX_PAYLOAD, banner.getBytes());
             cnxn.write(outputStream);
 
             boolean authorized = false;
-            boolean sentPublicKey = false;
+            boolean sentSignature = false;
 
-            while (!authorized) {
+            while (!authorized && !Thread.currentThread().isInterrupted()) {
                 Message resp = Message.parse(inputStream);
                 if (resp.command == A_CNXN) {
                     authorized = true;
@@ -206,7 +223,7 @@ public class AdbProtocol {
                     break;
                 } else if (resp.command == A_AUTH) {
                     if (resp.arg0 == AUTH_TYPE_TOKEN) {
-                        if (!sentPublicKey) {
+                        if (!sentSignature) {
                             try {
                                 byte[] sig = crypto.signToken(resp.payload);
                                 Message authSig = Message.create(A_AUTH, AUTH_TYPE_SIGNATURE, 0, sig);
@@ -214,8 +231,9 @@ public class AdbProtocol {
                             } catch (Exception e) {
                                 Log.e(TAG, "Signature failed", e);
                             }
-                            sentPublicKey = true;
+                            sentSignature = true;
                         } else {
+                            // If signature was rejected, send RSA public key
                             byte[] pubKey = crypto.getAdbPublicKeyBytes("phone@TiVoRemote");
                             Message authPub = Message.create(A_AUTH, AUTH_TYPE_RSAPUBLICKEY, 0, pubKey);
                             authPub.write(outputStream);
@@ -227,9 +245,16 @@ public class AdbProtocol {
                 }
             }
 
-            // Reader loop
-            while (isConnected && socket != null && !socket.isClosed()) {
-                Message.parse(inputStream);
+            // Continuous packet reader loop (handles A_OKAY, A_CLSE stream acks)
+            while (isConnected && socket != null && !socket.isClosed() && !Thread.currentThread().isInterrupted()) {
+                Message m = Message.parse(inputStream);
+                if (m.command == A_CLSE) {
+                    // Stream closed by remote side, acknowledge if needed
+                    try {
+                        Message ack = Message.create(A_CLSE, m.arg1, m.arg0, null);
+                        ack.write(outputStream);
+                    } catch (Exception ignored) {}
+                }
             }
 
         } catch (Exception e) {
@@ -240,7 +265,7 @@ public class AdbProtocol {
         }
     }
 
-    private void closeSocket() {
+    private synchronized void closeSocket() {
         try {
             if (socket != null && !socket.isClosed()) {
                 socket.close();

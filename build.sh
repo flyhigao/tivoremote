@@ -5,7 +5,7 @@ BUILD_TOOLS="E:/Android/sdk/build-tools/33.0.2"
 PLATFORM="E:/Android/sdk/platforms/android-33/android.jar"
 JAVA_BIN="E:/Program Files/Java/jdk-17/bin"
 KEYSTORE="C:/Users/haha/.android/debug.keystore"
-BASE_DIR="E:/esp/project/TiVoRemote"
+BASE_DIR="E:/esp/project/tivoremote"
 
 rm -rf "$BASE_DIR/build"
 mkdir -p "$BASE_DIR/build/compiled_res"

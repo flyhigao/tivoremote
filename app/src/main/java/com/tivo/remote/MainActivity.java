@@ -1,9 +1,9 @@
 package com.tivo.remote;
 
 import android.Manifest;
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AlertDialog;
-import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.content.Context;
 import android.content.Intent;
@@ -20,6 +20,9 @@ import android.widget.EditText;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.util.List;
+
+@SuppressLint("MissingPermission")
 public class MainActivity extends Activity {
     private static final String PREF_NAME = "tivo_remote_settings";
     private static final String PREF_IP = "tv_ip";
@@ -73,7 +76,7 @@ public class MainActivity extends Activity {
             if (isWifiMode) {
                 showIpDialog();
             } else {
-                openBluetoothSettings();
+                showBluetoothDeviceDialog();
             }
         });
 
@@ -110,10 +113,13 @@ public class MainActivity extends Activity {
         findViewById(R.id.btn_tivo).setOnClickListener(v -> {
             vibrate();
             if (isWifiMode) {
-                // Send intent to open TiVo Stream or Home
-                adbProtocol.sendKey(3);
+                if (adbProtocol != null) {
+                    adbProtocol.sendKey(3);
+                }
             } else {
-                btController.sendConsumerKey(BluetoothHidController.CONSUMER_HOME);
+                if (btController != null) {
+                    btController.sendConsumerKey(BluetoothHidController.CONSUMER_HOME);
+                }
             }
         });
     }
@@ -125,10 +131,19 @@ public class MainActivity extends Activity {
             vibrate();
             if (isWifiMode) {
                 if (adbProtocol != null) {
+                    if (!adbProtocol.isConnected()) {
+                        Toast.makeText(this, "正在重新连接 Wi-Fi: " + tvIp, Toast.LENGTH_SHORT).show();
+                        adbProtocol.connect(tvIp, 5555);
+                    }
                     adbProtocol.sendKey(adbKeycode);
                 }
             } else {
                 if (btController != null) {
+                    if (!btController.isConnected()) {
+                        Toast.makeText(this, "蓝牙未连接，请先点击【连接电视】", Toast.LENGTH_SHORT).show();
+                        showBluetoothDeviceDialog();
+                        return;
+                    }
                     if (isConsumer) {
                         btController.sendConsumerKey(btCode);
                     } else {
@@ -158,8 +173,9 @@ public class MainActivity extends Activity {
             tabWifi.setBackgroundResource(R.drawable.bg_tab_inactive);
             tabWifi.setTextColor(getResources().getColor(R.color.text_secondary));
 
-            btnAction.setText("配对设备");
+            btnAction.setText("连接电视");
             updateBluetoothStatus();
+            tryAutoConnectBluetooth();
         }
     }
 
@@ -179,7 +195,7 @@ public class MainActivity extends Activity {
                 if (isWifiMode) {
                     tvStatus.setText("已连接 (Wi-Fi): " + tvIp);
                     viewStatusDot.setBackgroundColor(getResources().getColor(R.color.status_green));
-                    Toast.makeText(MainActivity.this, "Wi-Fi 模式已连接", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(MainActivity.this, "Wi-Fi 模式已成功连接电视！", Toast.LENGTH_SHORT).show();
                 }
             }
 
@@ -207,6 +223,9 @@ public class MainActivity extends Activity {
             public void onHidReady(boolean isRegistered) {
                 if (!isWifiMode) {
                     updateBluetoothStatus();
+                    if (isRegistered) {
+                        tryAutoConnectBluetooth();
+                    }
                 }
             }
 
@@ -214,7 +233,8 @@ public class MainActivity extends Activity {
             public void onDeviceConnected(BluetoothDevice device) {
                 if (!isWifiMode) {
                     updateBluetoothStatus();
-                    Toast.makeText(MainActivity.this, "蓝牙已连接: " + (device.getName() != null ? device.getName() : device.getAddress()), Toast.LENGTH_SHORT).show();
+                    String devName = device.getName() != null ? device.getName() : device.getAddress();
+                    Toast.makeText(MainActivity.this, "蓝牙已连接: " + devName, Toast.LENGTH_SHORT).show();
                 }
             }
 
@@ -222,18 +242,32 @@ public class MainActivity extends Activity {
             public void onDeviceDisconnected() {
                 if (!isWifiMode) {
                     updateBluetoothStatus();
+                    Toast.makeText(MainActivity.this, "蓝牙已断开", Toast.LENGTH_SHORT).show();
                 }
             }
 
             @Override
             public void onError(String message) {
                 if (!isWifiMode) {
-                    tvStatus.setText("蓝牙错误: " + message);
+                    tvStatus.setText(message);
                     viewStatusDot.setBackgroundColor(getResources().getColor(R.color.status_red));
+                    Toast.makeText(MainActivity.this, message, Toast.LENGTH_LONG).show();
                 }
             }
         });
         btController.init();
+    }
+
+    private void tryAutoConnectBluetooth() {
+        if (btController == null || btController.isConnected()) return;
+        List<BluetoothDevice> bonded = btController.getBondedDevices();
+        for (BluetoothDevice d : bonded) {
+            String name = d.getName();
+            if (name != null && (name.contains("TiVo") || name.contains("Stream") || name.contains("TV"))) {
+                btController.connect(d);
+                break;
+            }
+        }
     }
 
     private void updateWifiStatus() {
@@ -248,10 +282,12 @@ public class MainActivity extends Activity {
 
     private void updateBluetoothStatus() {
         if (btController != null && btController.isConnected()) {
-            tvStatus.setText("已连接 (蓝牙 HID)");
+            BluetoothDevice dev = btController.getConnectedDevice();
+            String name = (dev != null && dev.getName() != null) ? dev.getName() : "TiVo";
+            tvStatus.setText("已连接 (蓝牙 HID): " + name);
             viewStatusDot.setBackgroundColor(getResources().getColor(R.color.status_green));
         } else {
-            tvStatus.setText("蓝牙广播就绪，请在电视【添加配件】配对");
+            tvStatus.setText("蓝牙未连接，请点击【连接电视】");
             viewStatusDot.setBackgroundColor(getResources().getColor(R.color.status_yellow));
         }
     }
@@ -273,6 +309,53 @@ public class MainActivity extends Activity {
                 if (adbProtocol != null) {
                     adbProtocol.connect(tvIp, 5555);
                 }
+            }
+        });
+        builder.setNegativeButton("取消", null);
+        builder.show();
+    }
+
+    private void showBluetoothDeviceDialog() {
+        if (btController == null) return;
+        List<BluetoothDevice> bondedDevices = btController.getBondedDevices();
+
+        if (bondedDevices.isEmpty()) {
+            new AlertDialog.Builder(this)
+                    .setTitle("未发现已配对设备")
+                    .setMessage("请先在电视系统的【设置 -> 遥控器与配件 -> 添加配件】中，搜索并连接你的手机。")
+                    .setPositiveButton("打开手机蓝牙设置", (d, w) -> openBluetoothSettings())
+                    .setNegativeButton("取消", null)
+                    .show();
+            return;
+        }
+
+        String[] names = new String[bondedDevices.size() + 1];
+        int defaultIndex = -1;
+        for (int i = 0; i < bondedDevices.size(); i++) {
+            BluetoothDevice d = bondedDevices.get(i);
+            String name = d.getName() != null ? d.getName() : d.getAddress();
+            names[i] = name;
+            if (name.contains("TiVo") || name.contains("TV") || name.contains("Stream")) {
+                defaultIndex = i;
+            }
+        }
+        names[bondedDevices.size()] = "➕ 配对新设备 (进入系统蓝牙设置)";
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("选择要连接的电视蓝牙");
+        builder.setItems(names, (dialog, which) -> {
+            if (which < bondedDevices.size()) {
+                BluetoothDevice selected = bondedDevices.get(which);
+                tvStatus.setText("正在连接蓝牙: " + names[which] + "...");
+                viewStatusDot.setBackgroundColor(getResources().getColor(R.color.status_yellow));
+                boolean initiated = btController.connect(selected);
+                if (initiated) {
+                    Toast.makeText(this, "正在建立蓝牙 HID 遥控连接...", Toast.LENGTH_SHORT).show();
+                } else {
+                    Toast.makeText(this, "连接请求已发送", Toast.LENGTH_SHORT).show();
+                }
+            } else {
+                openBluetoothSettings();
             }
         });
         builder.setNegativeButton("取消", null);

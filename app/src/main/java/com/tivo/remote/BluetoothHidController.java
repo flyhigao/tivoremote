@@ -12,6 +12,9 @@ import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.Executors;
 
 @SuppressLint("MissingPermission")
@@ -112,7 +115,12 @@ public class BluetoothHidController {
 
     public void init() {
         if (bluetoothAdapter == null) {
-            listener.onError("设备不支持蓝牙");
+            listener.onError("手机不支持蓝牙功能");
+            return;
+        }
+
+        if (!bluetoothAdapter.isEnabled()) {
+            listener.onError("请先在手机设置中开启蓝牙");
             return;
         }
 
@@ -121,6 +129,7 @@ public class BluetoothHidController {
             public void onServiceConnected(int profile, BluetoothProfile proxy) {
                 if (profile == BluetoothProfile.HID_DEVICE) {
                     hidDevice = (BluetoothHidDevice) proxy;
+                    Log.d(TAG, "HID Device Profile proxy connected");
                     registerHidApp();
                 }
             }
@@ -157,43 +166,82 @@ public class BluetoothHidController {
             @Override
             public void onAppStatusChanged(BluetoothDevice pluggedDevice, boolean registered) {
                 isRegistered = registered;
-                Log.d(TAG, "onAppStatusChanged registered=" + registered);
+                Log.d(TAG, "HID App registered: " + registered);
                 mainHandler.post(() -> listener.onHidReady(registered));
+
+                if (registered) {
+                    // Check if already connected
+                    checkExistingConnections();
+                }
             }
 
             @Override
             public void onConnectionStateChanged(BluetoothDevice device, int state) {
-                Log.d(TAG, "onConnectionStateChanged state=" + state);
+                Log.d(TAG, "ConnectionStateChanged: device=" + device.getName() + " (" + device.getAddress() + ") state=" + state);
                 if (state == BluetoothProfile.STATE_CONNECTED) {
                     connectedDevice = device;
                     mainHandler.post(() -> listener.onDeviceConnected(device));
                 } else if (state == BluetoothProfile.STATE_DISCONNECTED) {
-                    connectedDevice = null;
+                    if (connectedDevice != null && connectedDevice.equals(device)) {
+                        connectedDevice = null;
+                    }
                     mainHandler.post(listener::onDeviceDisconnected);
                 }
             }
         });
     }
 
-    public boolean isConnected() {
-        return hidDevice != null && connectedDevice != null;
+    public void checkExistingConnections() {
+        if (hidDevice == null) return;
+        List<BluetoothDevice> devs = hidDevice.getConnectedDevices();
+        if (devs != null && !devs.isEmpty()) {
+            connectedDevice = devs.get(0);
+            Log.d(TAG, "Found existing HID connection: " + connectedDevice.getName());
+            mainHandler.post(() -> listener.onDeviceConnected(connectedDevice));
+        }
     }
 
-    public void connect(BluetoothDevice device) {
-        if (hidDevice != null && device != null) {
-            hidDevice.connect(device);
+    public boolean isConnected() {
+        if (hidDevice == null) return false;
+        if (connectedDevice != null) return true;
+        List<BluetoothDevice> devs = hidDevice.getConnectedDevices();
+        if (devs != null && !devs.isEmpty()) {
+            connectedDevice = devs.get(0);
+            return true;
         }
+        return false;
+    }
+
+    public BluetoothDevice getConnectedDevice() {
+        return connectedDevice;
+    }
+
+    public List<BluetoothDevice> getBondedDevices() {
+        if (bluetoothAdapter == null) return new ArrayList<>();
+        Set<BluetoothDevice> bonded = bluetoothAdapter.getBondedDevices();
+        if (bonded == null) return new ArrayList<>();
+        return new ArrayList<>(bonded);
+    }
+
+    public boolean connect(BluetoothDevice device) {
+        if (hidDevice != null && device != null) {
+            Log.d(TAG, "Initiating HID connect to: " + device.getName() + " (" + device.getAddress() + ")");
+            return hidDevice.connect(device);
+        }
+        return false;
     }
 
     public void disconnect() {
         if (hidDevice != null && connectedDevice != null) {
             hidDevice.disconnect(connectedDevice);
+            connectedDevice = null;
         }
     }
 
     public void sendKeyboardKey(byte scancode) {
         if (!isConnected()) {
-            Log.w(TAG, "HID not connected, cannot send key");
+            Log.w(TAG, "HID not connected, cannot send keyboard key");
+            listener.onError("蓝牙未连接，请先点击【连接电视】");
             return;
         }
 
@@ -202,7 +250,7 @@ public class BluetoothHidController {
                 // Key press
                 byte[] pressReport = new byte[]{0x00, 0x00, scancode, 0, 0, 0, 0, 0};
                 hidDevice.sendReport(connectedDevice, 1, pressReport);
-                Thread.sleep(15);
+                Thread.sleep(20);
                 // Key release
                 byte[] releaseReport = new byte[]{0x00, 0x00, 0, 0, 0, 0, 0, 0};
                 hidDevice.sendReport(connectedDevice, 1, releaseReport);
@@ -215,6 +263,7 @@ public class BluetoothHidController {
     public void sendConsumerKey(int usageCode) {
         if (!isConnected()) {
             Log.w(TAG, "HID not connected, cannot send consumer key");
+            listener.onError("蓝牙未连接，请先点击【连接电视】");
             return;
         }
 
@@ -226,7 +275,7 @@ public class BluetoothHidController {
                         (byte) ((usageCode >> 8) & 0xFF)
                 };
                 hidDevice.sendReport(connectedDevice, 2, pressReport);
-                Thread.sleep(15);
+                Thread.sleep(20);
                 // Key release
                 byte[] releaseReport = new byte[]{0x00, 0x00};
                 hidDevice.sendReport(connectedDevice, 2, releaseReport);
@@ -239,7 +288,9 @@ public class BluetoothHidController {
     public void cleanup() {
         if (hidDevice != null) {
             if (isRegistered) {
-                hidDevice.unregisterApp();
+                try {
+                    hidDevice.unregisterApp();
+                } catch (Exception ignored) {}
             }
             bluetoothAdapter.closeProfileProxy(BluetoothProfile.HID_DEVICE, hidDevice);
         }
