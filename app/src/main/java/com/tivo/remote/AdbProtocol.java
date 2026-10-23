@@ -203,8 +203,8 @@ public class AdbProtocol {
             }
             try {
                 int localId = localIdCounter++;
-                String escaped = text.replace(" ", "%s");
-                String cmd = "shell:input text " + escaped + "\0";
+                String escaped = text.replace(" ", "%s").replace("'", "'\\''");
+                String cmd = "shell:input text '" + escaped + "'\0";
                 Message openMsg = Message.create(A_OPEN, localId, 0, cmd.getBytes());
                 openMsg.write(outputStream);
                 Log.d(TAG, "Sent text [" + text + "] successfully");
