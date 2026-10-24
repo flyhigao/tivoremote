@@ -5,6 +5,8 @@ import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.bluetooth.BluetoothDevice;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -304,24 +306,82 @@ public class MainActivity extends Activity {
     private void showTextInputDialog() {
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
         builder.setTitle("手机打字输入到电视");
+        builder.setMessage("支持英文 / 数字 / 符号（订阅链接、拼音搜索、Wi-Fi 密码等）\n"
+                + "可直接长按粘贴，或点【粘贴】填入手机剪贴板内容\n"
+                + "发送时会自动规避电视端中文输入法与首字母自动补全\n"
+                + "注：ADB 注入无法输入中文汉字，中文内容会被电视忽略");
 
         final EditText input = new EditText(this);
         input.setHint("输入英文、拼音搜索词 (如 qqmusic)");
+        input.setSingleLine(true);
         builder.setView(input);
+
+        // 打开即自动填入手机剪贴板内容，方便直接复制订阅链接/搜索词后一键发送
+        String clip = getClipboardText();
+        if (!clip.isEmpty()) {
+            input.setText(clip);
+            input.setSelection(input.getText().length());
+        }
 
         builder.setPositiveButton("发送", (dialog, which) -> {
             String text = input.getText().toString().trim();
-            if (!text.isEmpty()) {
-                if (isWifiMode && adbProtocol != null) {
-                    adbProtocol.sendText(text);
-                    Toast.makeText(this, "已发送: " + text, Toast.LENGTH_SHORT).show();
-                } else {
-                    Toast.makeText(this, "当前模式不支持打字推送", Toast.LENGTH_SHORT).show();
-                }
+            if (text.isEmpty()) {
+                return;
+            }
+            if (!isWifiMode || adbProtocol == null) {
+                Toast.makeText(this, "当前模式不支持打字推送，请切换到 Wi-Fi 模式", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            int sent = adbProtocol.sendText(text);
+            if (sent < text.length()) {
+                Toast.makeText(this, "文本过长，仅发送前 " + sent + " 个字符", Toast.LENGTH_LONG).show();
+            } else if (!isAscii(text)) {
+                Toast.makeText(this, "已发送（中文汉字无法注入电视，建议用拼音）", Toast.LENGTH_LONG).show();
+            } else {
+                Toast.makeText(this, "已发送: " + text, Toast.LENGTH_SHORT).show();
             }
         });
         builder.setNegativeButton("取消", null);
-        builder.show();
+        builder.setNeutralButton("粘贴", null);
+
+        AlertDialog dialog = builder.create();
+        dialog.setOnShowListener(d -> dialog.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v -> {
+            String t = getClipboardText();
+            if (t.isEmpty()) {
+                Toast.makeText(this, "手机剪贴板为空", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            input.setText(t);
+            input.setSelection(input.getText().length());
+        }));
+        dialog.show();
+    }
+
+    /** 读取手机剪贴板文本（弹窗在前台，Android 10+ 允许读取） */
+    private String getClipboardText() {
+        try {
+            ClipboardManager cm = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+            if (cm == null || !cm.hasPrimaryClip()) {
+                return "";
+            }
+            ClipData clip = cm.getPrimaryClip();
+            if (clip == null || clip.getItemCount() == 0) {
+                return "";
+            }
+            CharSequence cs = clip.getItemAt(0).coerceToText(this);
+            return cs == null ? "" : cs.toString().trim();
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private boolean isAscii(String s) {
+        for (int i = 0; i < s.length(); i++) {
+            if (s.charAt(i) > 127) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private void showIpDialog() {

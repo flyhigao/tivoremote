@@ -10,11 +10,28 @@ import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import android.util.Base64;
 
 public class AdbProtocol {
     private static final String TAG = "AdbProtocol";
+
+    /**
+     * 电视端“不参与中文联想/不转换标点”的备用输入法。
+     *
+     * 背景：adb shell input text 注入的是“硬件按键事件”，会被电视上正在使用的
+     * 中文输入法（如 Gboard 拼音模式）当成拼音编码，导致：
+     *   a -> 啊，  . -> 。   : -> ：   , -> ，   ? -> ？
+     * 因此注入前先临时把默认输入法切到一个不联想的输入法，注入完成后再切回原输入法。
+     */
+    private static final String[] TEXT_SAFE_IMES = new String[] {
+            // Google TV 语音输入法（TiVo Stream 4K / 多数 Android TV 上自带，实测最干净）
+            "com.google.android.tts/com.google.android.apps.speech.tts.googletts.settings.asr.voiceime.VoiceInputMethodService",
+            // 原生 AOSP 键盘（部分机顶盒自带，纯英文不联想）
+            "com.android.inputmethod.latin/.LatinIME",
+    };
 
     public static final int A_SYNC = 0x434e5953;
     public static final int A_CNXN = 0x4e584e43;
@@ -134,6 +151,8 @@ public class AdbProtocol {
     private OutputStream outputStream;
     private InputStream inputStream;
     private volatile boolean isConnected = false;
+    /** 对端（电视）声明的单包最大长度，握手时从 A_CNXN 中读取 */
+    private volatile int remoteMaxPayload = MAX_PAYLOAD;
     private int localIdCounter = 1;
     private String currentHost = "192.168.2.223";
     private int currentPort = 5555;
@@ -194,7 +213,30 @@ public class AdbProtocol {
         });
     }
 
-    public void sendText(String text) {
+    /**
+     * 手机打字直通电视输入框。
+     *
+     * 实现要点：
+     * 1. 文本用 Base64 传输，彻底规避 shell 引号/空格/%s/&/# 等特殊字符问题；
+     * 2. 注入前把电视默认输入法临时切到不联想的输入法，避免中文输入法把
+     *    英文和 ASCII 标点转成中文（. -> 。, : -> ：）；
+     * 3. 注入完自动切回电视原本的输入法（用户无感知）；
+     * 4. 文本超过单包上限时按上限截断（防止 ADB 包被设备拒绝，整条命令失效）。
+     *
+     * @return 实际注入的字符数（< text.length() 表示因过长被截断）
+     */
+    public int sendText(String text) {
+        final String clean = text.replace("\r", "").replace("\n", " ");
+
+        // 先按单包上限估算可用长度：Base64 膨胀 4/3，带协议头链接还要额外发
+        // “守卫空格 + 左移按键”，最坏情况约占 4.5 倍，这里统一按保守值算
+        int budget = remoteMaxPayload > 2048 ? remoteMaxPayload : MAX_PAYLOAD;
+        int maxChars = Math.max(64, (budget - 512) * 2 / 9);
+        final String payload = clean.length() > maxChars ? clean.substring(0, maxChars) : clean;
+
+        final String script = buildTextScript(payload);
+        int sentChars = payload.length();
+
         sendExecutor.execute(() -> {
             if (!isConnected() || outputStream == null) {
                 Log.w(TAG, "Cannot send text: not connected");
@@ -203,15 +245,98 @@ public class AdbProtocol {
             }
             try {
                 int localId = localIdCounter++;
-                String escaped = text.replace(" ", "%s").replace("'", "'\\''");
-                String cmd = "shell:input text '" + escaped + "'\0";
-                Message openMsg = Message.create(A_OPEN, localId, 0, cmd.getBytes());
+                String cmd = "shell:" + script + "\0";
+                Message openMsg = Message.create(A_OPEN, localId, 0, cmd.getBytes(StandardCharsets.UTF_8));
                 openMsg.write(outputStream);
-                Log.d(TAG, "Sent text [" + text + "] successfully");
+                Log.d(TAG, "Sent text [" + payload + "] (" + cmd.length() + " bytes command)");
             } catch (Exception e) {
                 Log.e(TAG, "Failed to send text", e);
             }
         });
+
+        return sentChars;
+    }
+
+    /**
+     * 组装在电视端执行的注入脚本（单条 shell 命令，保证顺序执行）。
+     */
+    private String buildTextScript(String text) {
+        StringBuilder sb = new StringBuilder(256 + text.length() * 2);
+
+        // 1. 记住电视当前输入法，并挑一个“不联想”的输入法
+        sb.append("o=$(settings get secure default_input_method);a=;for c in ");
+        for (String ime : TEXT_SAFE_IMES) {
+            sb.append('\'').append(ime).append("' ");
+        }
+        sb.append("; do if [ \"$c\" != \"$o\" ] && ime list -s | grep -qxF \"$c\"; then a=\"$c\"; break; fi; done;");
+
+        // 2. 切换输入法（切换后需要一点时间让新输入法绑定生效）
+        sb.append("if [ -n \"$a\" ]; then ime set \"$a\" >/dev/null 2>&1; sleep 0.7; fi;");
+
+        // 3. 注入文本：按 "%s" 切分，因为 input text 会把 %s 当成空格，
+        //    只有拆成独立的 "%" 与 "s" 才能原样输入
+        boolean urlLike = isUrlLike(text);
+        if (urlLike) {
+            // 影视 / TVBox 系的【配置地址】输入框会把开头的单个 a/f/h 自动补全成
+            // assets:// file:// http://，先注入一个空格占位，让输入框全程不为单字符状态，
+            // 注入完再把守卫空格删掉（光标左移 len 次后 DEL，正好只删掉守卫）
+            appendInjectCall(sb, " ");
+        }
+
+        String[] parts = text.split("%s", -1);
+        for (int i = 0; i < parts.length; i++) {
+            if (i > 0) {
+                appendInjectCall(sb, "%");
+                appendInjectCall(sb, "s");
+            }
+            appendInjectCall(sb, parts[i]);
+        }
+
+        if (urlLike) {
+            sb.append("input keyevent ");
+            for (int i = 0; i < text.length(); i++) {
+                sb.append("21 ");   // KEYCODE_DPAD_LEFT：光标左移，回到守卫空格右侧
+            }
+            sb.append(";sleep 0.3;input keyevent 67;");   // KEYCODE_DEL：删掉守卫空格
+        }
+
+        // 4. 还原电视原本的输入法
+        sb.append("if [ -n \"$a\" ] && [ -n \"$o\" ]; then sleep 0.3; ime set \"$o\" >/dev/null 2>&1; fi");
+        return sb.toString();
+    }
+
+    /** 形如 http:// https:// file:// clan:// 等带协议头的链接才需要防“首字母自动补全” */
+    private boolean isUrlLike(String text) {
+        if (text.length() < 5) {
+            return false;
+        }
+        int colon = text.indexOf("://");
+        if (colon < 1 || colon > 16) {
+            return false;
+        }
+        for (int i = 0; i < colon; i++) {
+            char c = text.charAt(i);
+            boolean ok = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+                    || (c >= '0' && c <= '9') || c == '+' || c == '.' || c == '-';
+            if (!ok) {
+                return false;
+            }
+        }
+        // 纯 ASCII 才能保证“注入字符数 == 文本长度”，光标左移次数才不会算错
+        for (int i = 0; i < text.length(); i++) {
+            if (text.charAt(i) > 127) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private void appendInjectCall(StringBuilder sb, String piece) {
+        if (piece == null || piece.isEmpty()) {
+            return;
+        }
+        String b64 = Base64.encodeToString(piece.getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP);
+        sb.append("input text \"$(printf %s ").append(b64).append(" | base64 -d)\";");
     }
 
     private void runConnection() {
@@ -237,6 +362,10 @@ public class AdbProtocol {
             while (!authorized && !Thread.currentThread().isInterrupted()) {
                 Message resp = Message.parse(inputStream);
                 if (resp.command == A_CNXN) {
+                    if (resp.arg1 > 0) {
+                        remoteMaxPayload = resp.arg1;
+                        Log.d(TAG, "Remote max payload: " + remoteMaxPayload);
+                    }
                     authorized = true;
                     isConnected = true;
                     notifyConnected();
